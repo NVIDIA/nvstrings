@@ -1,0 +1,11 @@
+name: builddocs_py35
+channels:
+- nvidia
+dependencies:
+- python=3.5.*
+- nvstrings
+- ipython
+- numpydoc
+- sphinx
+- sphinx_rtd_theme
+- sphinxcontrib-websupport
