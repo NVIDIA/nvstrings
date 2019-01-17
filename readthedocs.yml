@@ -2,7 +2,7 @@ build:
    image: latest
 
 python:
-   version: 3.6
+   version: 3.7
 
 conda:
-   file: conda/environments/builddocs_py36.yml
+   file: conda/environments/builddocs_py37.yml
