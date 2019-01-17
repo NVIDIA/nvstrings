@@ -7,3 +7,10 @@ nvstrings
 ---------
 .. autoclass:: nvstrings
     :members:
+
+.. currentmodule:: nvcategory
+
+nvcategory
+----------
+.. autoclass:: nvcategory
+    :members:

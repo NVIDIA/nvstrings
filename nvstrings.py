@@ -7,9 +7,10 @@ def to_device(strs):
     return nvstrings(cptr)
 
 
-def from_csv(csv, column, lines=0):
+def from_csv(csv, column, lines=0, flags=0):
     """
-    This is not full featured and will be removed in the future.
+    Reads a column of values from a CSV file into a new nvstrings instance.
+    The CSV file must be formatted as UTF-8.
 
     Parameters
     ----------
@@ -19,20 +20,37 @@ def from_csv(csv, column, lines=0):
             0-based index of the column to read into an nvstrings object
         lines : int
             maximum number of lines to read from the file
+        flags : int
+            values may be combined
+            1 - sort by length
+            2 - sort by name
+            8 - nulls are empty strings
+
     Returns
     -------
     A new nvstrings instance pointing to strings loaded onto the GPU
 
     Examples
     --------
+    For CSV file (file.csv) containing 2 rows and 3 columns:
+    header1,header2,header3
+    r1c1,r1c2,r1c3
+    r2c1,r2c2,r2c3
 
     .. code-block:: python
 
       import nvstrings
-      strs = nvstrings.from_csv("file.csv",2)
+      s = nvstrings.from_csv("file.csv",2)
+      print(s)
+
+    Output:
+
+    .. code-block:: python
+
+      ['r1c3','r2c3']
 
     """
-    rtn = pyniNVStrings.n_createFromCSV(csv, column, lines)
+    rtn = pyniNVStrings.n_createFromCSV(csv, column, lines, flags)
     if rtn is not None:
         rtn = nvstrings(rtn)
     return rtn
@@ -47,7 +65,7 @@ def free(dstrs):
 def bind_cpointer(cptr):
     """Bind an NVStrings C-pointer to a new instance."""
     rtn = None
-    if cptr is not 0:
+    if cptr != 0:
         rtn = nvstrings(cptr)
     return rtn
 
@@ -57,12 +75,9 @@ class nvstrings:
     """
     Instance manages a list of strings in device memory.
 
-    Operations are across all of the strings and their results reside in device
-    memory.
-
-    Strings in the list are immutable.
-
-    Methods that modify any string will create new nvstrings instance.
+    Operations are across all of the strings and their results reside in
+    device memory. Strings in the list are immutable.
+    Methods that modify any string will create a new nvstrings instance.
     """
     #
     m_cptr = 0
@@ -126,7 +141,7 @@ class nvstrings:
 
           import nvstrings
           s = nvstrings.to_device(["hello","world"])
-          len(s)
+          print(s.size())
 
         Output:
 
@@ -139,12 +154,13 @@ class nvstrings:
 
     def len(self, devptr=0):
         """
-        Returns the lengths in characters of each string.
+        Returns the number of characters of each string.
 
         Parameters
         ----------
             devptr : GPU memory pointer
-                Pointer to GPU memory where length values should be written
+                Where string length values will be written.
+                Must be able to hold at least size() of int32 values.
 
         Examples
         --------
@@ -172,30 +188,23 @@ class nvstrings:
         rtn = pyniNVStrings.n_len(self.m_cptr, devptr)
         return rtn
 
-    # def get_nulls( self, en=False, devptr=0 ):
-    #     """Returns the number of null strings in this instance."""
-    #     rtn = pyniNVStrings.n_get_nulls(self.m_cptr,en,devptr)
-    #     return rtn
-
     def compare(self, str, devptr=0):
         """
         Compare each string to the supplied string.
-
-        Returns value of 0 where string matches.
-
-        Returns < 0 when first different character is lower than argument
-        string or argument string is shorter.
-
-        Returns > 0 when first different character is greater than the argument
-        string or the argument string is longer.
+        Returns value of 0 for strings that match str.
+        Returns < 0 when first different character is lower
+        than argument string or argument string is shorter.
+        Returns > 0 when first different character is greater
+        than the argument string or the argument string is longer.
 
         Parameters
         ----------
             str : str
-                String to compare all strings in an nvstrings object to
+                String to compare all strings in this instance.
 
             devptr : GPU memory pointer
-                Pointer to GPU array where length values should be written
+                Where string result values will be written.
+                Must be able to hold at least size() of int32 values.
 
         Examples
         --------
@@ -224,7 +233,8 @@ class nvstrings:
         Parameters
         ----------
             devptr : GPU memory pointer
-                Pointer to GPU array where length values should be written
+                Where string hash values will be written.
+                Must be able to hold at least size() of uint32 values.
 
         Examples
         --------
@@ -252,7 +262,8 @@ class nvstrings:
         Parameters
         ----------
             devptr : GPU memory pointer
-                Pointer to GPU array where length values should be written
+                Where resulting integer values will be written.
+                Memory must be able to hold at least size() of int32 values.
 
         Examples
         --------
@@ -260,16 +271,14 @@ class nvstrings:
 
           import nvstrings
           import numpy as np
-          s = nvstrings.to_device([
-            "1234","5678","90",None,"-876","543.2","-0.12",".55","-.002",""
-            ])
-          s.stoi()
+          s = nvstrings.to_device(["1234","-876","543.2","-0.12",".55""])
+          print(s.stoi())
 
         Output:
 
         .. code-block:: python
 
-          [1234, 5678, 90, 0, -876, 543, 0, 0, 0, 0]
+          [1234, -876, 543, 0, 0]
 
         """
         rtn = pyniNVStrings.n_stoi(self.m_cptr, devptr)
@@ -282,7 +291,8 @@ class nvstrings:
         Parameters
         ----------
             devptr : GPU memory pointer
-                Pointer to GPU array where length values should be written
+                Where resulting float values will be written.
+                Memory must be able to hold at least size() of float32 values
 
         Examples
         --------
@@ -291,24 +301,15 @@ class nvstrings:
           import nvstrings
           import numpy as np
           from librmm_cffi import librmm
-
-          s = nvstrings.to_device([
-            "123", None, "-876", "43.2", "-0.12", ".55", "-.002", ""
-          ])
-          for s in s.stof(): print(s)
+          s = nvstrings.to_device(["1234","-876","543.2","-0.12",".55"])
+          print(s.stof())
 
         Output:
 
         .. code-block:: python
 
-          123.0
-          0.0
-          -876.0
-          43.20000076293945
-          -0.11999999731779099
-          0.550000011920929
-          -0.001999999862164259
-          0.0
+          [1234.0, -876.0, 543.2000122070312,
+           -0.11999999731779099, 0.550000011920929]
 
         """
         rtn = pyniNVStrings.n_stof(self.m_cptr, devptr)
@@ -316,14 +317,14 @@ class nvstrings:
 
     def cat(self, others=None, sep=None, na_rep=None):
         """
-        Appends the given strings to this list of strings and returns a new
-        nvstrings.
+        Appends the given strings to this list of strings and
+        returns as new nvstrings.
 
         Parameters
         ----------
             others : List of str
-                Strings to be appended. The number of strings must match.
-
+                Strings to be appended.
+                The number of strings must match size() of this instance.
                 This must be either a Python array of strings or another
                 nvstrings instance.
 
@@ -332,8 +333,8 @@ class nvstrings:
                 before appending the others.
 
             na_rep : char
-                This character will take the place of any null strings (not
-                empty strings) in either list.
+                This character will take the place of any null strings
+                (not empty strings) in either list.
 
         Examples
         --------
@@ -360,13 +361,13 @@ class nvstrings:
 
     def join(self, sep=''):
         """
-        Concatentate a list of strings into a single string.
+        Concatentate this list of strings into a single string.
 
         Parameters
         ----------
             sep : str
-                this separator will be appended to each string before appending
-                the others.
+                This separator will be appended to each string before
+                appending the next.
 
         Examples
         --------
@@ -374,7 +375,7 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello",None,"goodbye"])
+          s = nvstrings.to_device(["hello","goodbye"])
           s.join(sep=':')
 
         Output:
@@ -391,14 +392,14 @@ class nvstrings:
 
     def split(self, delimiter=None, n=-1):
         """
-        Returns an array of nvstrings each representing the split of each
-        individual string.
+        Returns an array of nvstrings each representing the split
+        of each individual string.
 
         Parameters
         ----------
             delimiter : str
-                The character used to locate the split points of each string.
-                Default is space.
+                The character used to locate the split points of
+                each string. Default is space.
 
             n : int
                 Maximum number of strings to return for each split.
@@ -412,6 +413,7 @@ class nvstrings:
           s = nvstrings.to_device(["hello world","goodbye","well said"])
           for result in s.split(' '):
             print(result)
+
 
         Output:
 
@@ -434,13 +436,14 @@ class nvstrings:
     def rsplit(self, delimiter=None, n=-1):
         """
         Returns an array of nvstrings each representing the split of each
-        individual string. Delimiter is searched for from the end.
+        individual string. The delimiter is searched for from the end of
+        each string.
 
         Parameters
         ----------
             delimiter : str
-                The character used to locate the split points of each string.
-                Default is space.
+                The character used to locate the split points of each
+                string. Default is space.
 
             n : int
                 Maximum number of strings to return for each split.
@@ -451,17 +454,18 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello world","goodbye","well said"])
-          for result in s.rsplit(' '):
-            print(result)
+          strs = nvstrings.to_device(["hello world","goodbye","up in arms"])
+          for s in strs.rsplit(' ',2):
+            print(s)
+
 
         Output:
 
         .. code-block:: python
 
-          ["hello","world"]
-          ["goodbye"]
-          ["well","said"]
+          ['hello', 'world']
+          ['goodbye']
+          ['up in', 'arms']
 
         """
         strs = pyniNVStrings.n_rsplit(self.m_cptr, delimiter, n)
@@ -477,13 +481,14 @@ class nvstrings:
         """
         Each string is split into two strings on the first delimiter found.
 
-        Three strings are returned for each string: beginning, delimiter, end.
+        Three strings are returned for each string:
+        beginning, delimiter, end.
 
         Parameters
         ----------
             delimiter : str
-                The character used to locate the split points of each string.
-                Default is space.
+                The character used to locate the split points of each
+                string. Default is space.
 
         Examples
         --------
@@ -491,17 +496,18 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello world","goodbye","well said"])
-          for result in s.partition(','):
-            print(result)
+          strs = nvstrings.to_device(["hello world","goodbye","up in arms"])
+          for s in strs.partition(' '):
+            print(s)
+
 
         Output:
 
         .. code-block:: python
 
-          ["hello","world"]
-          ["goodbye"]
-          ["well","said"]
+          ['hello', ' ', 'world']
+          ['goodbye', '', '']
+          ['up', ' ', 'in arms']
 
         """
         strs = pyniNVStrings.n_partition(self.m_cptr, delimiter)
@@ -532,17 +538,18 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello world","goodbye","well said"])
-          for result in s.rpartition(','):
-            print(result)
+          strs = nvstrings.to_device(["hello world","goodbye","up in arms"])
+          for s in strs.rpartition(' '):
+            print(s)
+
 
         Output:
 
         .. code-block:: python
 
-          ["hello","world"]
-          ["goodbye"]
-          ["well","said"]
+          ['hello', ' ', 'world']
+          ['', '', 'goodbye']
+          ['up in', ' ', 'arms']
 
         """
         strs = pyniNVStrings.n_rpartition(self.m_cptr, delimiter)
@@ -556,8 +563,8 @@ class nvstrings:
 
     def split_column(self, delimiter=' ', n=-1):
         """
-        A new set of columns (nvstrings) is created by splitting the strings
-        vertically.
+        A new set of columns (nvstrings) is created by splitting
+        the strings vertically.
 
         Parameters
         ----------
@@ -575,6 +582,7 @@ class nvstrings:
           s = nvstrings.to_device(["hello world","goodbye","well said"])
           for result in s.split_column(' '):
             print(result)
+
 
         Output:
 
@@ -595,8 +603,8 @@ class nvstrings:
 
     def rsplit_column(self, delimiter=' ', n=-1):
         """
-        A new set of columns (nvstrings) is created by splitting the strings
-        vertically. Delimiter is searched from the end.
+        A new set of columns (nvstrings) is created by splitting
+        the strings vertically. Delimiter is searched from the end.
 
         Parameters
         ----------
@@ -613,6 +621,7 @@ class nvstrings:
           s = nvstrings.to_device(["hello world","goodbye","well said"])
           for result in s.rsplit_column(' '):
             print(result)
+
 
         Output:
 
@@ -640,8 +649,8 @@ class nvstrings:
         Parameters
         ----------
           i : int
-            The character position identifying the character in each string to
-            return.
+            The character position identifying the character
+            in each string to return.
 
         Examples
         --------
@@ -666,14 +675,14 @@ class nvstrings:
 
     def repeat(self, repeats):
         """
-        Appends each string with itself the specified number of times. This
-        returns a nvstrings instance with the new strings.
+        Appends each string with itself the specified number of times.
+        This returns a nvstrings instance with the new strings.
 
         Parameters
         ----------
             repeats : int
-               The number of times each string should be repeated. Repeat count
-               of 0 or 1 will just return copy of each string.
+               The number of times each string should be repeated.
+               Repeat count of 0 or 1 will just return copy of each string.
 
         Examples
         --------
@@ -698,14 +707,14 @@ class nvstrings:
 
     def pad(self, width, side='left', fillchar=' '):
         """
-        Add specified padding to each string. Side:{'left','right','both'},
-        default is 'left'.
+        Add specified padding to each string.
+        Side:{'left','right','both'}, default is 'left'.
 
         Parameters
         ----------
           fillchar : char
-            The character used to do the padding. Default is space character.
-            Only the first character is used.
+            The character used to do the padding.
+            Default is space character. Only the first character is used.
 
           side : str
             Either one of "left", "right", "both". The default is "left"
@@ -714,7 +723,8 @@ class nvstrings:
 
             "right" performs a padding on the right – same as ljust()
 
-            "both" performs equal padding on left and right – sames as center()
+            "both" performs equal padding on left and right
+            – same as center()
 
         Examples
         --------
@@ -743,13 +753,14 @@ class nvstrings:
 
         Parameters
         ----------
-          width : int
-            The minimum width of characters of the new string. If the width is
-            smaller than the existing string, no padding is performed.
+          width	: int
+            The minimum width of characters of the new string.
+            If the width is smaller than the existing string,
+            no padding is performed.
 
           fillchar : char
-            The character used to do the padding. Default is space character.
-            Only the first character is used.
+            The character used to do the padding.
+            Default is space character. Only the first character is used.
 
         Examples
         --------
@@ -778,13 +789,14 @@ class nvstrings:
 
         Parameters
         ----------
-          width : int
-            The minimum width of characters of the new string. If the width is
-            smaller than the existing string, no padding is performed.
+          width	: int
+            The minimum width of characters of the new string.
+            If the width is smaller than the existing string,
+            no padding is performed.
 
           fillchar : char
-            The character used to do the padding. Default is space character.
-            Only the first character is used.
+            The character used to do the padding.
+            Default is space character. Only the first character is used.
 
         Examples
         --------
@@ -795,6 +807,7 @@ class nvstrings:
           s = nvstrings.to_device(["hello","goodbye","well"])
           for result in s.center(width=6):
             print(result)
+
 
         Output:
 
@@ -814,13 +827,14 @@ class nvstrings:
 
         Parameters
         ----------
-          width : int
-            The minimum width of characters of the new string. If the width is
-            smaller than the existing string, no padding is performed.
+          width	: int
+            The minimum width of characters of the new string.
+            If the width is smaller than the existing string,
+            no padding is performed.
 
           fillchar : char
-            The character used to do the padding. Default is space character.
-            Only the first character is used.
+            The character used to do the padding.
+            Default is space character. Only the first character is used.
 
         Examples
         --------
@@ -845,28 +859,31 @@ class nvstrings:
 
     def zfill(self, width):
         """
-        Pads the strings with leading zeros. It will handle prefix sign
-        characters correctly for strings that are numbers.
+        Pads the strings with leading zeros.
+        It will handle prefix sign characters correctly for strings
+        containing leading number characters.
 
         Parameters
         ----------
-          width : int
-            The minimum width of characters of the new string. If the width is
-            smaller than the existing string, no padding is performed.
+          width	: int
+            The minimum width of characters of the new string.
+            If the width is smaller than the existing string,
+            no padding is performed.
+
         Examples
         --------
         .. code-block:: python
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello","goodbye","well"])
+          s = nvstrings.to_device(["hello","1234","-9876","+5.34"])
           print(s.zfill(width=6))
 
         Output:
 
         .. code-block:: python
 
-          ['0hello', 'goodbye', '00well']
+          ['0hello', '001234', '-09876', '+05.34']
 
         """
         rtn = pyniNVStrings.n_zfill(self.m_cptr, width)
@@ -876,15 +893,15 @@ class nvstrings:
 
     def wrap(self, width):
         """
-        This will place new-line characters in whitespace so each line is no
-        more than width characters. Lines will not be truncated.
+        This will place new-line characters in whitespace so each line
+        is no more than width characters. Lines will not be truncated.
 
         Parameters
         ----------
-          width : int
-            The maximum width of characters per newline in the new string. If
-            the width is smaller than the existing string, no newlines will be
-            inserted.
+          width	: int
+            The maximum width of characters per newline in the new string.
+            If the width is smaller than the existing string, no newlines
+            will be inserted.
 
         Examples
         --------
@@ -914,11 +931,13 @@ class nvstrings:
         Parameters
         ----------
         start : int
-          Beginning position of the string to extract. Default is beginning of
-          each string.
+          Beginning position of the string to extract.
+          Default is beginning of the each string.
+
         stop : int
-          Ending position of the string to extract. Default is end of each
-          string.
+          Ending position of the string to extract.
+          Default is end of each string.
+
         step : str
           Characters that are to be captured within the specified section.
           Default is every character.
@@ -947,7 +966,39 @@ class nvstrings:
     def slice_from(self, starts=0, stops=0):
         """
         Return substring of each string using positions for each string.
-        Position values must be in device memory.
+
+        The starts and stops parameters are device memory pointers.
+        If specified, each must contain size() of int32 values.
+
+        Parameters
+        ----------
+        starts : GPU memory pointer
+          Beginning position of each the string to extract.
+          Default is beginning of the each string.
+
+        stops : GPU memory pointer
+          Ending position of the each string to extract.
+          Default is end of each string.
+          Use -1 to specify to the end of that string.
+
+
+        Examples
+        --------
+        .. code-block:: python
+
+          import nvstrings
+          import numpy as np
+          from numba import cuda
+
+          s = nvstrings.to_device(["hello","there"])
+          darr = cuda.to_device(np.asarray([2,3],dtype=np.int32))
+          print(s.slice_from(starts=darr.device_ctypes_pointer.value))
+
+        Output:
+
+        .. code-block:: python
+
+          ['llo','re']
 
         """
         rtn = pyniNVStrings.n_slice_from(self.m_cptr, starts, stops)
@@ -958,6 +1009,35 @@ class nvstrings:
     def slice_replace(self, start=None, stop=None, repl=None):
         """
         Replace the specified section of each string with a new string.
+
+        Parameters
+        ----------
+        start : int
+          Beginning position of the string to replace.
+          Default is beginning of the each string.
+
+        stop : int
+          Ending position of the string to replace.
+          Default is end of each string.
+
+        repl : str
+          String to insert into the specified position values.
+
+        Examples
+        --------
+        .. code-block:: python
+
+        import nvstrings
+
+        strs = nvstrings.to_device(["abcdefghij","0123456789"])
+        print(strs.slice_replace(2,5,'z'))
+
+        Output:
+
+        .. code-block:: python
+
+        ['abzfghij', '01z56789']
+
         """
         rtn = pyniNVStrings.n_slice_replace(self.m_cptr, start, stop, repl)
         if rtn is not None:
@@ -966,7 +1046,7 @@ class nvstrings:
 
     def replace(self, pat, repl, n=-1, regex=True):
         """
-        Replace a string (pat) found in each string with another string (repl).
+        Replace a string (pat) in each string with another string (repl).
 
         Parameters
         ----------
@@ -1013,14 +1093,14 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello","goodbye"])
-          print(s.lstrip('h', ''))
+          s = nvstrings.to_device(["oh","hello","goodbye"])
+          print(s.lstrip('o'))
 
         Output:
 
         .. code-block:: python
 
-          ['ello', 'goodbye']
+          ['h', 'hello', 'goodbye']
 
         """
         rtn = pyniNVStrings.n_lstrip(self.m_cptr, to_strip)
@@ -1035,7 +1115,7 @@ class nvstrings:
         Parameters
         ----------
         to_strip : str
-          Characters to be removed from both edges of each string
+          Characters to be removed from both ends of each string
 
         Examples
         --------
@@ -1044,7 +1124,7 @@ class nvstrings:
           import nvstrings
 
           s = nvstrings.to_device(["oh, hello","goodbye"])
-          print(s.strip('o', ''))
+          print(s.strip('o'))
 
         Output:
 
@@ -1073,14 +1153,14 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello","goodbye"])
-          print(s.rstrip('o', ''))
+          s = nvstrings.to_device(["oh","hello","goodbye"])
+          print(s.rstrip('o'))
 
         Output:
 
         .. code-block:: python
 
-          ['hell', 'goodbye']
+          ['oh', 'hell', 'goodbye']
 
         """
         rtn = pyniNVStrings.n_rstrip(self.m_cptr, to_strip)
@@ -1091,6 +1171,7 @@ class nvstrings:
     def lower(self):
         """
         Convert each string to lowercase.
+        This only applies to ASCII characters at this time.
 
         Examples
         --------
@@ -1116,6 +1197,7 @@ class nvstrings:
     def upper(self):
         """
         Convert each string to uppercase.
+        This only applies to ASCII characters at this time.
 
         Examples
         --------
@@ -1123,7 +1205,7 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello, friend","goodbye, friend"])
+          s = nvstrings.to_device(["Hello, friend","Goodbye, friend"])
           print(s.lower())
 
         Output:
@@ -1141,6 +1223,7 @@ class nvstrings:
     def capitalize(self):
         """
         Capitalize first character of each string.
+        This only applies to ASCII characters at this time.
 
         Examples
         --------
@@ -1166,6 +1249,7 @@ class nvstrings:
     def swapcase(self):
         """
         Change each lowercase character to uppercase and vice versa.
+        This only applies to ASCII characters at this time.
 
         Examples
         --------
@@ -1190,7 +1274,9 @@ class nvstrings:
 
     def title(self):
         """
-        Uppercase the first letter of each word and lowercase the rest.
+        Uppercase the first letter of each letter after a space
+        and lowercase the rest.
+        This only applies to ASCII characters at this time.
 
         Examples
         --------
@@ -1198,14 +1284,14 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["hello, Friend","goodbye, Friend"])
-          print(s.lower())
+          s = nvstrings.to_device(["Hello friend","goodnight moon"])
+          print(s.title())
 
         Output:
 
         .. code-block:: python
 
-          ['Hello, friend', 'Goodbye, friend']
+          ['Hello Friend', 'Goodnight Moon']
 
         """
         rtn = pyniNVStrings.n_title(self.m_cptr)
@@ -1213,28 +1299,25 @@ class nvstrings:
             rtn = nvstrings(rtn)
         return rtn
 
-    def index(self, search, start=0, end=None, devptr=0):
+    def index(self, sub, start=0, end=None, devptr=0):
         """
         Same as find but throws an error if arg is not found in all strings.
 
         Parameters
         ----------
-          search : str
+          sub : str
             String to find
 
           start : int
-            Beginning of section to replace. Default is beginning of each
-            string.
+            Beginning of section to replace.
+            Default is beginning of each string.
 
           end : int
             End of section to replace. Default is end of each string.
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
             Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results returned as list of ints.
 
         Examples
         --------
@@ -1252,30 +1335,28 @@ class nvstrings:
           [2,3]
 
         """
-        rtn = pyniNVStrings.n_index(self.m_cptr, search, start, end, devptr)
+        rtn = pyniNVStrings.n_index(self.m_cptr, sub, start, end, devptr)
         return rtn
 
-    def rindex(self, search, start=0, end=None, devptr=0):
+    def rindex(self, sub, start=0, end=None, devptr=0):
         """
         Same as rfind but throws an error if arg is not found in all strings.
 
         Parameters
         ----------
-          search : str
+          sub : str
             String to find
 
           start : int
-            Beginning of section to replace. Default is start of each string
+            Beginning of section to replace.
+            Default is beginning of each string.
 
           end : int
             End of section to replace. Default is end of each string.
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
             Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results returned as list of ints.
 
         Examples
         --------
@@ -1293,32 +1374,30 @@ class nvstrings:
           [3,3]
 
         """
-        rtn = pyniNVStrings.n_rindex(self.m_cptr, search, start, end, devptr)
+        rtn = pyniNVStrings.n_rindex(self.m_cptr, sub, start, end, devptr)
         return rtn
 
-    def find(self, search, start=0, end=None, devptr=0):
+    def find(self, sub, start=0, end=None, devptr=0):
         """
-        Find the specified string within each string. Return -1 for those
-        strings where the arg is not found.
+        Find the specified string sub within each string.
+        Return -1 for those strings where sub is not found.
 
         Parameters
         ----------
-          search : str
+          sub : str
             String to find
 
           start : int
-            Beginning of section to replace. Default is start of each string
+            Beginning of section to replace.
+            Default is beginning of each string.
 
           end : int
             End of section to replace. Default is end of each string.
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
             Memory size must be able to hold at least size() of int32 values.
 
-            If `devptr` not given, results returned as list
-            of integers.
 
         Examples
         --------
@@ -1336,58 +1415,74 @@ class nvstrings:
           [4,-1,1]
 
         """
-        rtn = pyniNVStrings.n_find(self.m_cptr, search, start, end, devptr)
+        rtn = pyniNVStrings.n_find(self.m_cptr, sub, start, end, devptr)
         return rtn
 
-    def find_from(self, search, starts=0, ends=0, devptr=0):
+    def find_from(self, sub, starts=0, ends=0, devptr=0):
         """
-        Find the specified string within each string starting at individual
-        character positions.
+        Find the specified string within each string starting at the
+        specified character positions.
 
-        The starts and ends parameters must be device memory pointers.
+        The starts and ends parameters are device memory pointers.
+        If specified, each must contain size() of int32 values.
 
-        Return -1 for those strings where the arg is not found.
+        Returns -1 for those strings where sub is not found.
 
         Parameters
         ----------
-          search : str
+          sub : str
             String to find
 
           starts : GPU memory pointer
-            Pointer to GPU array of ints of beginning of sections to replace,
-            one per string. Default is beginning of each string.
+            Pointer to GPU array of int32 values of beginning of sections to
+            search, one per string.
 
           ends : GPU memory pointer
-            Pointer to GPU array of ints of end of sections to replace.
-            Default is end of each string.
+            Pointer to GPU array of int32 values of end of sections to search.
+            Use -1 to specify to the end of that string.
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
             Memory size must be able to hold at least size() of int32 values.
 
-            If `devptr` not given, results returned as list of ints.
+
+        Examples
+        --------
+        .. code-block:: python
+
+          import nvstrings
+          import numpy as np
+          from numba import cuda
+
+          s = nvstrings.to_device(["hello","there"])
+          darr = cuda.to_device(np.asarray([2,3],dtype=np.int32))
+          print(s.find_from('e',starts=darr.device_ctypes_pointer.value))
+
+        Output:
+
+        .. code-block:: python
+
+          [-1,4]
 
         """
-        rtn = pyniNVStrings.n_find_from(self.m_cptr, search,
-                                        starts, ends, devptr)
+        rtn = pyniNVStrings.n_find_from(self.m_cptr, sub, starts, ends, devptr)
         return rtn
 
-    def rfind(self, search, start=0, end=None, devptr=0):
+    def rfind(self, sub, start=0, end=None, devptr=0):
         """
-        Find the specified string within each string. Search from the end
-        of the string.
+        Find the specified string within each string.
+        Search from the end of the string.
 
-        Return -1 for those strings where the arg is not found.
+        Return -1 for those strings where sub is not found.
 
         Parameters
         ----------
-          search : str
+          sub : str
             String to find
 
           start : int
-            Beginning of section to replace. Default is beginning of each
-            string.
+            Beginning of section to replace.
+            Default is beginning of each string.
 
           end : int
             End of section to replace. Default is end of each string.
@@ -1395,9 +1490,6 @@ class nvstrings:
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
 
-            Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results returned as list of ints.
 
         Examples
         --------
@@ -1415,11 +1507,12 @@ class nvstrings:
           [4, -1, 1]
 
         """
-        rtn = pyniNVStrings.n_rfind(self.m_cptr, search, start, end, devptr)
+        rtn = pyniNVStrings.n_rfind(self.m_cptr, sub, start, end, devptr)
         return rtn
 
     def findall(self, pat):
         """
+        Find all occurrences of regular expression pattern in each string.
         A new array of nvstrings is created for each string in this instance.
 
         Parameters
@@ -1437,6 +1530,7 @@ class nvstrings:
           s = nvstrings.to_device(["hare","bunny","rabbit"])
           for result in s.findall('[ab]'):
             print(result)
+
 
         Output:
 
@@ -1477,6 +1571,7 @@ class nvstrings:
           for result in s.findall_column('[ab]'):
             print(result)
 
+
         Output:
 
         .. code-block:: python
@@ -1499,25 +1594,22 @@ class nvstrings:
         """
         Find the specified string within each string.
 
+        Default expects regex pattern.
+        Returns an array of boolean values where
+        True if `pat` is found, False if not.
+
         Parameters
         ----------
           pat : str
-            Pattern to find
+            Pattern or string to search for in each string of this instance.
 
           regex : bool
-            If `True`, pat is interpreted as a regex
-            If `False`, pat is a substring to to be searched for
+            If `True`, pat is interpreted as a regex string.
+            If `False`, pat is a string to be searched for in each instance.
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
-            Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results are returned as a list of ints.
-
-        Returns
-        -------
-        `True` if `pat` found, `False` if not
+            Must be able to hold at least size() of np.byte values.
 
         Examples
         --------
@@ -1526,7 +1618,7 @@ class nvstrings:
           import nvstrings
           s = nvstrings.to_device(["hello","there","world"])
 
-          print(s.contains('o', regex=False))
+          print(s.contains('o'))
 
         Output:
 
@@ -1540,7 +1632,8 @@ class nvstrings:
 
     def match(self, pat, devptr=0):
         """
-        The specified pattern must match the beginning of each string.
+        Return array of boolean values where True is set if the specified
+        pattern matches the beginning of the corresponding string.
 
         Parameters
         ----------
@@ -1549,10 +1642,8 @@ class nvstrings:
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
-
-            Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results are returned as list of ints.
+            Memory size must be able to hold at least size() of
+            np.byte values.
 
         Examples
         --------
@@ -1584,18 +1675,16 @@ class nvstrings:
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
+            Memory must be able to hold at least size() of int32 values.
 
-            Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results are returned as list of ints.
         """
         rtn = pyniNVStrings.n_count(self.m_cptr, pat, devptr)
         return rtn
 
     def startswith(self, pat, devptr=0):
         """
-        Return true for the strings where the specified string is at the
-        beginning.
+        Return array of boolean values with True for the strings where the
+        specified string is at the beginning.
 
         Parameters
         ----------
@@ -1604,10 +1693,8 @@ class nvstrings:
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
+            Memory must be able to hold at least size() of np.byte values.
 
-            Memory size must be able to hold at least size() of int32 values.
-
-            If `devptr` not given, results returned as list of ints.
 
         Examples
         --------
@@ -1630,7 +1717,8 @@ class nvstrings:
 
     def endswith(self, pat, devptr=0):
         """
-        Return true for the strings where the specified string is at the end.
+        Return array of boolean values with True for the strings
+        where the specified string is at the end.
 
         Parameters
         ----------
@@ -1639,11 +1727,8 @@ class nvstrings:
 
           devptr : GPU memory pointer
             Optional device memory pointer to hold the results.
+            Memory must be able to hold at least size() of np.byte values.
 
-            Memory size must be able to hold at least size() of int32 values.
-
-            If pointer is not provided, the results are returned as Python
-            array of integers.
 
         Examples
         --------
@@ -1666,6 +1751,7 @@ class nvstrings:
 
     def extract(self, pat):
         """
+        Extract string from the first match of regular expression pat.
         A new array of nvstrings is created for each string in this instance.
 
         Parameters
@@ -1683,6 +1769,7 @@ class nvstrings:
           s = nvstrings.to_device(["a1","b2","c3"])
           for result in s.extract('([ab])(\d)'):
             print(result)
+
 
         Output:
 
@@ -1704,7 +1791,8 @@ class nvstrings:
 
     def extract_column(self, pat):
         """
-        A new vector of nvstrings is created by organizing group results
+        Extract string from the first match of regular expression pat.
+        A new array of nvstrings is created by organizing group results
         vertically.
 
         Parameters
@@ -1719,9 +1807,10 @@ class nvstrings:
 
           import nvstrings
 
-          s = nvstrings.to_device(["a1", "b2", "c3"])
+          s = nvstrings.to_device(["a1","b2","c3"])
           for result in s.extract_column('([ab])(\d)'):
             print(result)
+
 
         Output:
 
@@ -1743,59 +1832,223 @@ class nvstrings:
 
     def isalnum(self, devptr=0):
         """
-        Return true for strings that contain only alpha-numeric characters.
+        Return array of boolean values with True for strings that contain
+        only alpha-numeric characters.
         Equivalent to: isalpha() or isdigit() or isnumeric() or isdecimal()
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isalnum())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [True, True, False, False, False, False]
+
         """
         rtn = pyniNVStrings.n_isalnum(self.m_cptr, devptr)
         return rtn
 
     def isalpha(self, devptr=0):
         """
-        Return true for strings that contain only alphabetic characters.
+        Return array of boolean values with True for strings that contain
+        only alphabetic characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isalpha())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [False, True, False, False, False, False]
+
         """
         rtn = pyniNVStrings.n_isalpha(self.m_cptr, devptr)
         return rtn
 
     def isdigit(self, devptr=0):
         """
-        Return true for strings that contain only decimal and digit characters.
+        Return array of boolean values with True for strings that contain
+        only decimal and digit characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isdigit())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [True, False, False, False, False, False]
+
         """
         rtn = pyniNVStrings.n_isdigit(self.m_cptr, devptr)
         return rtn
 
     def isspace(self, devptr=0):
         """
-        Return true for strings that contain only whitespace characters.
+        Return array of boolean values with True for strings that contain
+        only whitespace characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isspace())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [False, False, False, False, False, True]
+
         """
         rtn = pyniNVStrings.n_isspace(self.m_cptr, devptr)
         return rtn
 
     def isdecimal(self, devptr=0):
         """
-        Return true for strings that contain only decimal characters -- those
-        that can be used to extract base10 numbers.
+        Return array of boolean values with True for strings that contain only
+        decimal characters -- those that can be used to extract base10 numbers.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isdecimal())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [True, False, False, False, False, False]
+
         """
         rtn = pyniNVStrings.n_isdecimal(self.m_cptr, devptr)
         return rtn
 
     def isnumeric(self, devptr=0):
         """
-        Return true for strings that contain only numeric characters.
-        These include digit and numeric characters.
+        Return array of boolean values with True for strings that contain
+        only numeric characters. These include digit and numeric characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['1234', 'de', '1.75', '-34', '+9.8', ' '])
+          print(s.isnumeric())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [True, False, False, False, False, False]
+
         """
         rtn = pyniNVStrings.n_isnumeric(self.m_cptr, devptr)
         return rtn
 
+    def islower(self, devptr=0):
+        """
+        Return array of boolean values with True for strings that contain
+        only lowercase characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['hello', 'Goodbye'])
+          print(s.islower())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [True, False]
+
+        """
+        rtn = pyniNVStrings.n_islower(self.m_cptr, devptr)
+        return rtn
+
+    def isupper(self, devptr=0):
+        """
+        Return array of boolean values with True for strings that contain
+        only uppercase characters.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(['hello', 'Goodbye'])
+          print(s.isupper())
+
+
+        Output:
+
+        .. code-block:: python
+
+          [False, True]
+
+        """
+        rtn = pyniNVStrings.n_isupper(self.m_cptr, devptr)
+        return rtn
+
     def translate(self, table):
         """
-        Translate individual characters to new characters using the provided
-        table.
+        Translate individual characters to new characters using
+        the provided table.
 
         Parameters
         ----------
           pat : dict
-            Use str.maketrans() to build the mapping table. Unspecified
-            characters are unchanged.
+            Use str.maketrans() to build the mapping table.
+            Unspecified characters are unchanged.
 
         Examples
         --------
@@ -1811,7 +2064,6 @@ class nvstrings:
         .. code-block:: python
 
           ['HELLo', 'tHErE', 'worLd]
-
         """
         rtn = pyniNVStrings.n_translate(self.m_cptr, table)
         if rtn is not None:
@@ -1821,6 +2073,7 @@ class nvstrings:
     def sort(self, stype, asc=True):
         """
         Sort this list by name (2) or length (1) or both (3).
+        Sorting can help improve performance for other operations.
 
         Parameters
         ----------
@@ -1853,17 +2106,67 @@ class nvstrings:
           ['bb', 'aaa', 'aaaabb']
 
         """
-        pyniNVStrings.n_sort(self.m_cptr, stype, asc)
-        return self
+        rtn = pyniNVStrings.n_sort(self.m_cptr, stype, asc)
+        if rtn is not None:
+            rtn = nvstrings(rtn)
+        return rtn
 
-    def sublist(self, indexes):
+    def order(self, stype, asc=True, devptr=0):
+        """
+        Sort this list by name (2) or length (1) or both (3).
+        This sort only provides the new indexes and does not reorder the
+        managed strings.
+
+        Parameters
+        ----------
+          stype : int
+            Type of sort to use.
+
+            If stype is 1, strings will be sorted by length
+
+            If stype is 2, strings will be sorted alphabetically by name
+
+            If stype is 3, strings will be sorted by length and then
+            alphabetically
+
+          asc : bool
+            Whether to sort ascending (True) or descending (False)
+
+          devptr : GPU memory pointer
+                Where index values will be written.
+                Must be able to hold at least size() of int32 values.
+
+        Examples
+        --------
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(["aaa", "bb", "aaaabb"])
+          print(s.order(2))
+
+        Output:
+
+        .. code-block:: python
+
+          [1, 0, 2]
+
+        """
+        rtn = pyniNVStrings.n_order(self.m_cptr, stype, asc, devptr)
+        return rtn
+
+    def sublist(self, indexes, count=0):
         """
         Return a sublist of strings from this instance.
 
         Parameters
         ----------
-          indexes : List of ints
+          indexes : List of ints or GPU memory pointer
             0-based indexes of strings to return from an nvstrings object
+
+          count : int
+            Number of ints if indexes parm is a device pointer.
+            Otherwise it is ignored.
 
         Examples
         --------
@@ -1881,7 +2184,7 @@ class nvstrings:
           ['hello', 'world']
 
         """
-        rtn = pyniNVStrings.n_sublist(self.m_cptr, indexes)
+        rtn = pyniNVStrings.n_sublist(self.m_cptr, indexes, count)
         if rtn is not None:
             rtn = nvstrings(rtn)
         return rtn
@@ -1894,10 +2197,12 @@ class nvstrings:
         ----------
           indexes : List of ints
             0-based indexes of strings to remove from an nvstrings object
-            If `indexes` is a dev pointer, `count` argument is required.
+            If this parameter is pointer to device memory, count parm is
+            required.
 
-          count : If a dev pointer, `count` is number of ints, else it is
-          ignored.
+          count : int
+            Number of ints if indexes parm is a device pointer.
+            Otherwise it is ignored.
 
         Examples
         --------
@@ -1918,4 +2223,45 @@ class nvstrings:
         rtn = pyniNVStrings.n_remove_strings(self.m_cptr, indexes, count)
         if rtn is not None:
             rtn = nvstrings(rtn)
+        return rtn
+
+    def find_multiple(self, strs, devptr=0):
+        """
+        Return a 'matrix' of find results for each of the string in the
+        strs parameter.
+
+        Each row is an array of integers identifying the first location
+        of the corresponding provided string.
+
+        Parameters
+        ----------
+            strs : nvstrings
+                Strings to find in each of the strings in this instance.
+
+            devptr : GPU memory pointer
+                Optional device memory pointer to hold the results.
+
+                Memory size must be able to hold at least size()*strs.size()
+                of int32 values.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+          import nvstrings
+
+          s = nvstrings.to_device(["hare","bunny","rabbit"])
+          t = nvstrings.to_device(["a","e","i","o","u"])
+          print(s.find_multiple(t))
+
+
+        Output:
+
+        .. code-block:: python
+
+          [[1, 3, -1, -1, -1], [-1, -1, -1, -1, 1], [1, -1, 4, -1, -1]]
+
+        """
+        rtn = pyniNVStrings.n_find_multiple(self.m_cptr, strs, devptr)
         return rtn
